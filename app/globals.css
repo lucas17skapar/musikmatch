@@ -24,3 +24,50 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.light-theme {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.light-theme .bg-white\/5 {
+  background-color: #f1f5f9 !important;
+}
+
+.light-theme .bg-white\/10 {
+  background-color: #e2e8f0 !important;
+}
+
+.light-theme .border-white\/10 {
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme .border-white\/15 {
+  border-color: #e5e7eb !important;
+}
+
+.light-theme .text-white,
+.light-theme .text-emerald-100\/90,
+.light-theme .text-emerald-100,
+.light-theme .text-emerald-50 {
+  color: #0f172a !important;
+}
+
+.light-theme .text-slate-200\/80,
+.light-theme .text-slate-200\/90 {
+  color: #334155 !important;
+}
+
+.light-theme .text-emerald-200\/80,
+.light-theme .text-emerald-100\/70 {
+  color: #047857 !important;
+}
+
+.light-theme .bg-slate-950,
+.light-theme .bg-slate-950\/70 {
+  background-color: #ffffff !important;
+}
+
+.light-theme .text-emerald-50 {
+  color: #0f172a !important;
+}
