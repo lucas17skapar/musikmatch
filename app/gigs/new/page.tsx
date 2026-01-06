@@ -12,10 +12,15 @@ export default function NewGigPage() {
     const [description, setDescription] = useState("");
     const [city, setCity] = useState("");
     const [startTime, setStartTime] = useState(""); // datetime-local
-    const [duration, setDuration] = useState(60);
+    const [endTime, setEndTime] = useState(""); // datetime-local
     const [budgetMin, setBudgetMin] = useState<number | "">("");
     const [budgetMax, setBudgetMax] = useState<number | "">("");
     const [msg, setMsg] = useState<string | null>(null);
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+
+    const maxImageBytes = 5 * 1024 * 1024;
 
     useEffect(() => {
         (async () => {
@@ -35,12 +40,31 @@ export default function NewGigPage() {
         })();
     }, [router]);
 
+    useEffect(() => {
+        if (!imageFile) {
+            setImagePreview(null);
+            return;
+        }
+
+        const objectUrl = URL.createObjectURL(imageFile);
+        setImagePreview(objectUrl);
+
+        return () => {
+            URL.revokeObjectURL(objectUrl);
+        };
+    }, [imageFile]);
+
     async function createGig() {
         setMsg(null);
+        if (saving) return;
+        setSaving(true);
 
         const { data } = await supabase.auth.getSession();
         const session = data.session;
-        if (!session) return router.replace("/login");
+        if (!session) {
+            setSaving(false);
+            return router.replace("/login");
+        }
 
         const { data: profile } = await supabase
             .from("profiles")
@@ -48,12 +72,69 @@ export default function NewGigPage() {
             .eq("id", session.user.id)
             .maybeSingle();
 
-        if (!profile || profile.role !== "venue") return setMsg("Endast venue kan skapa gigs.");
+        if (!profile || profile.role !== "venue") {
+            setSaving(false);
+            return setMsg("Endast venue kan skapa gigs.");
+        }
 
-        if (title.trim().length < 3) return setMsg("Titel måste vara minst 3 tecken.");
-        if (!startTime) return setMsg("Välj starttid.");
+        if (title.trim().length < 3) {
+            setSaving(false);
+            return setMsg("Titel måste vara minst 3 tecken.");
+        }
+        if (!startTime) {
+            setSaving(false);
+            return setMsg("Välj starttid.");
+        }
+        if (!endTime) {
+            setSaving(false);
+            return setMsg("Välj sluttid.");
+        }
 
         const start = new Date(startTime).toISOString();
+        const startDate = new Date(startTime);
+        const endDate = new Date(endTime);
+        const durationMinutes = Math.floor((endDate.getTime() - startDate.getTime()) / 60000);
+
+        if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+            setSaving(false);
+            return setMsg("Sluttiden måste vara efter starttiden.");
+        }
+        if (durationMinutes < 15) {
+            setSaving(false);
+            return setMsg("Giget måste vara minst 15 minuter.");
+        }
+
+        let imageUrl: string | null = null;
+        let uploadedPath: string | null = null;
+
+        if (imageFile) {
+            const ext = imageFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
+            const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : "jpg";
+            const unique =
+                typeof crypto !== "undefined" && "randomUUID" in crypto
+                    ? crypto.randomUUID()
+                    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const path = `gigs/${session.user.id}/${unique}.${safeExt}`;
+            uploadedPath = path;
+
+            const { error: uploadError } = await supabase.storage
+                .from("gig-images")
+                .upload(path, imageFile, {
+                    cacheControl: "3600",
+                    contentType: imageFile.type || "image/*",
+                    upsert: false,
+                });
+
+            if (uploadError) {
+                setSaving(false);
+                return setMsg(`Kunde inte ladda upp bilden: ${uploadError.message}`);
+            }
+
+            const { data: publicUrl } = supabase.storage
+                .from("gig-images")
+                .getPublicUrl(path);
+            imageUrl = publicUrl?.publicUrl ?? null;
+        }
 
         const { data: inserted, error } = await supabase
             .from("gigs")
@@ -63,15 +144,23 @@ export default function NewGigPage() {
                 description: description.trim() || null,
                 city: city.trim() || null,
                 start_time: start,
-                duration_minutes: duration,
+                duration_minutes: durationMinutes,
                 budget_min: budgetMin === "" ? null : budgetMin,
                 budget_max: budgetMax === "" ? null : budgetMax,
+                image_url: imageUrl,
             })
             .select("id")
             .single();
 
-        if (error) return setMsg(error.message);
+        if (error) {
+            if (uploadedPath) {
+                await supabase.storage.from("gig-images").remove([uploadedPath]);
+            }
+            setSaving(false);
+            return setMsg(error.message);
+        }
 
+        setSaving(false);
         router.replace(`/gigs/${inserted.id}`);
     }
 
@@ -101,6 +190,48 @@ export default function NewGigPage() {
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                         />
+                        <div className="space-y-2">
+                            <p className="text-xs uppercase tracking-[0.15em] text-slate-200/60">
+                                Gigbild (valfritt)
+                            </p>
+                            <input
+                                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white file:mr-4 file:rounded-full file:border-0 file:bg-emerald-400 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-950"
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0] ?? null;
+                                    if (!file) {
+                                        setImageFile(null);
+                                        return;
+                                    }
+                                    if (!file.type.startsWith("image/")) {
+                                        setMsg("Filen måste vara en bild.");
+                                        setImageFile(null);
+                                        e.currentTarget.value = "";
+                                        return;
+                                    }
+                                    if (file.size > maxImageBytes) {
+                                        setMsg("Bilden är för stor (max 5 MB).");
+                                        setImageFile(null);
+                                        e.currentTarget.value = "";
+                                        return;
+                                    }
+                                    setMsg(null);
+                                    setImageFile(file);
+                                }}
+                            />
+                            {imagePreview ? (
+                                <img
+                                    src={imagePreview}
+                                    alt="Förhandsvisning av gigbild"
+                                    className="h-40 w-full rounded-xl border border-white/10 object-cover"
+                                />
+                            ) : (
+                                <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-4 py-6 text-center text-xs text-slate-200/70">
+                                    Ingen bild vald
+                                </div>
+                            )}
+                        </div>
                         <input
                             className={inputClass}
                             placeholder="Stad (valfritt)"
@@ -122,35 +253,39 @@ export default function NewGigPage() {
                             />
                             <input
                                 className={inputClass}
-                                type="number"
-                                value={duration}
-                                onChange={(e) => setDuration(parseInt(e.target.value || "60", 10))}
-                                min={15}
+                                type="datetime-local"
+                                value={endTime}
+                                onChange={(e) => setEndTime(e.target.value)}
                             />
                         </div>
+                        <p className="text-xs text-slate-200/70">
+                            Ange start- och sluttid för giget (minst 15 min).
+                        </p>
 
                         <div className="grid gap-4 sm:grid-cols-2">
                             <input
                                 className={inputClass}
                                 type="number"
-                                placeholder="Budget min"
+                                placeholder="Budget min (kr/timme)"
                                 value={budgetMin}
                                 onChange={(e) => setBudgetMin(e.target.value === "" ? "" : Number(e.target.value))}
                             />
                             <input
                                 className={inputClass}
                                 type="number"
-                                placeholder="Budget max"
+                                placeholder="Budget max (kr/timme)"
                                 value={budgetMax}
                                 onChange={(e) => setBudgetMax(e.target.value === "" ? "" : Number(e.target.value))}
                             />
                         </div>
+                        <p className="text-xs text-slate-200/70">Prisintervallet är per timme.</p>
 
                         <button
                             onClick={createGig}
+                            disabled={saving}
                             className="inline-flex justify-center rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:-translate-y-0.5 hover:bg-emerald-300"
                         >
-                            Skapa
+                            {saving ? "Skapar..." : "Skapa"}
                         </button>
                     </div>
                 </div>

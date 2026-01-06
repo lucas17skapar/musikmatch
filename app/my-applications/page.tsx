@@ -16,7 +16,7 @@ type ApplicationRow = {
     title: string;
     city: string | null;
     start_time: string;
-  };
+  }[];
 };
 
 export default function MyApplicationsPage() {
@@ -74,7 +74,7 @@ export default function MyApplicationsPage() {
         return;
       }
 
-      if (active) setApps((rows ?? []) as ApplicationRow[]);
+      if (active) setApps((rows ?? []) as unknown as ApplicationRow[]);
       if (active) setLoading(false);
     })();
 
@@ -139,9 +139,10 @@ export default function MyApplicationsPage() {
 
         <div className="grid gap-4">
           {apps.map((a) => {
-            const gigTitle = a.gigs?.title ?? `Gig #${a.gig_id}`;
-            const gigMeta = a.gigs?.start_time
-              ? `${a.gigs.city ?? "—"} · ${new Date(a.gigs.start_time).toLocaleString()}`
+            const gig = a.gigs?.[0];
+            const gigTitle = gig?.title ?? `Gig #${a.gig_id}`;
+            const gigMeta = gig?.start_time
+              ? `${gig.city ?? "—"} · ${new Date(gig.start_time).toLocaleString()}`
               : null;
 
             return (

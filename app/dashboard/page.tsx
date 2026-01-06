@@ -82,6 +82,17 @@ export default function DashboardPage() {
             .update({ contact_email: trimmedEmail, contact_phone: trimmedPhone })
             .eq("musician_id", session.user.id);
 
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(
+                new CustomEvent("musikmatch-contact-updated", {
+                    detail: {
+                        contact_email: trimmedEmail,
+                        contact_phone: trimmedPhone,
+                    },
+                })
+            );
+        }
+
         setProfile((prev) =>
             prev
                 ? { ...prev, contact_email: trimmedEmail, contact_phone: trimmedPhone }

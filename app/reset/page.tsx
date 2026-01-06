@@ -45,7 +45,7 @@ export default function ResetPage() {
                         window.history.replaceState({}, document.title, url.pathname);
                     }
                 }
-            } catch (e) {
+            } catch {
                 // ignore and rely on getSession below
             }
 

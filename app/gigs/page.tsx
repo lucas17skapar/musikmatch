@@ -14,6 +14,7 @@ type Gig = {
     duration_minutes: number;
     budget_min: number | null;
     budget_max: number | null;
+    image_url?: string | null;
 };
 
 export default function GigsPage() {
@@ -25,19 +26,23 @@ export default function GigsPage() {
     useEffect(() => {
         (async () => {
             const { data } = await supabase.auth.getSession();
-            if (!data.session) return router.replace("/login");
+            const session = data.session;
 
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("role")
-                .eq("id", data.session.user.id)
-                .maybeSingle();
+            if (session) {
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("role")
+                    .eq("id", session.user.id)
+                    .maybeSingle();
 
-            setRole((profile?.role as "musician" | "venue" | undefined) ?? null);
+                setRole((profile?.role as "musician" | "venue" | undefined) ?? null);
+            } else {
+                setRole(null);
+            }
 
             const { data: rows, error } = await supabase
                 .from("gigs")
-                .select("id,title,city,start_time,duration_minutes,budget_min,budget_max")
+                .select("id,title,city,start_time,duration_minutes,budget_min,budget_max,image_url")
                 .order("start_time", { ascending: true });
 
             if (error) setMsg(error.message);
@@ -70,9 +75,16 @@ export default function GigsPage() {
                         <Link
                             key={g.id}
                             href={`/gigs/${g.id}`}
-                            className="group rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/30 transition hover:-translate-y-1 hover:border-emerald-300/60"
+                            className="group flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/30 transition hover:-translate-y-1 hover:border-emerald-300/60 md:flex-row md:items-center"
                         >
-                            <div className="flex items-start justify-between gap-3">
+                            {g.image_url ? (
+                                <img
+                                    src={g.image_url}
+                                    alt={`Bild för ${g.title}`}
+                                    className="h-32 w-full rounded-xl border border-white/10 object-cover md:h-24 md:w-40"
+                                />
+                            ) : null}
+                            <div className="flex items-start justify-between gap-3 md:flex-1">
                                 <div>
                                     <h2 className="text-lg font-semibold text-white group-hover:text-emerald-100">
                                         {g.title}
@@ -80,16 +92,16 @@ export default function GigsPage() {
                                     <p className="mt-1 text-sm text-slate-200/80">
                                         {g.city ?? "—"} · {new Date(g.start_time).toLocaleString()} · {g.duration_minutes} min
                                     </p>
+                                    {g.budget_min != null || g.budget_max != null ? (
+                                        <p className="mt-3 text-sm text-slate-200/80">
+                                            Budget: {g.budget_min ?? "?"}–{g.budget_max ?? "?"} kr/timme
+                                        </p>
+                                    ) : null}
                                 </div>
                                 <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-emerald-100/90">
                                     ID {g.id}
                                 </span>
                             </div>
-                            {g.budget_min != null || g.budget_max != null ? (
-                                <p className="mt-3 text-sm text-slate-200/80">
-                                    Budget: {g.budget_min ?? "?"}–{g.budget_max ?? "?"}
-                                </p>
-                            ) : null}
                         </Link>
                     ))}
                 </div>

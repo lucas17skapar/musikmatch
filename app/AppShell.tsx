@@ -4,14 +4,15 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
+const ROLE_STORAGE_KEY = "musikmatch_role";
+const THEME_STORAGE_KEY = "musikmatch_theme";
+
 type AppShellProps = {
   children: ReactNode;
   containerClassName?: string;
 };
 
 export function AppShell({ children, containerClassName }: AppShellProps) {
-  const ROLE_STORAGE_KEY = "musikmatch_role";
-  const THEME_STORAGE_KEY = "musikmatch_theme";
   const [role, setRole] = useState<"musician" | "venue" | "unknown">("unknown");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     if (typeof window === "undefined") return "dark";
@@ -21,11 +22,6 @@ export function AppShell({ children, containerClassName }: AppShellProps) {
 
   useEffect(() => {
     let active = true;
-
-    const cached = typeof window !== "undefined" ? localStorage.getItem(ROLE_STORAGE_KEY) : null;
-    if (cached === "musician" || cached === "venue") {
-      setRole(cached);
-    }
 
     async function loadRole(userId: string) {
       const { data: profile } = await supabase
@@ -45,6 +41,11 @@ export function AppShell({ children, containerClassName }: AppShellProps) {
     }
 
     (async () => {
+      if (typeof window !== "undefined") {
+        const cached = localStorage.getItem(ROLE_STORAGE_KEY);
+        if (cached === "musician" || cached === "venue") setRole(cached);
+      }
+
       const { data } = await supabase.auth.getSession();
       const session = data.session;
       if (!session) {

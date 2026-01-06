@@ -22,6 +22,7 @@ export default function MyGigsPage() {
   const [appCounts, setAppCounts] = useState<Record<number, number>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -101,6 +102,38 @@ export default function MyGigsPage() {
     };
   }, [router]);
 
+  async function deleteGig(gigId: number) {
+    if (!confirm("Vill du ta bort giget? Detta går inte att ångra.")) return;
+    setDeletingId(gigId);
+    setMsg(null);
+
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    if (!session) {
+      setDeletingId(null);
+      return router.replace("/login");
+    }
+
+    const { error } = await supabase
+      .from("gigs")
+      .delete()
+      .eq("id", gigId)
+      .eq("venue_id", session.user.id);
+
+    setDeletingId(null);
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+
+    setGigs((prev) => prev.filter((g) => g.id !== gigId));
+    setAppCounts((prev) => {
+      const next = { ...prev };
+      delete next[gigId];
+      return next;
+    });
+  }
+
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl space-y-6">
@@ -126,17 +159,19 @@ export default function MyGigsPage() {
 
         <div className="grid gap-4">
           {gigs.map((g) => (
-            <Link
+            <div
               key={g.id}
-              href={`/gigs/${g.id}`}
-              className="group rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/30 transition hover:-translate-y-1 hover:border-emerald-300/60"
+              className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/30"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-white group-hover:text-emerald-100">
+                <div className="space-y-1">
+                  <Link
+                    href={`/gigs/${g.id}`}
+                    className="text-lg font-semibold text-white transition hover:text-emerald-100"
+                  >
                     {g.title}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-200/80">
+                  </Link>
+                  <p className="text-sm text-slate-200/80">
                     {g.city ?? "—"} · {new Date(g.start_time).toLocaleString()} · {g.duration_minutes} min
                   </p>
                 </div>
@@ -146,13 +181,25 @@ export default function MyGigsPage() {
               </div>
               {g.budget_min != null || g.budget_max != null ? (
                 <p className="mt-3 text-sm text-slate-200/80">
-                  Budget: {g.budget_min ?? "?"}–{g.budget_max ?? "?"}
+                  Budget: {g.budget_min ?? "?"}–{g.budget_max ?? "?"} kr/timme
                 </p>
               ) : null}
-              <p className="mt-3 text-sm font-semibold text-emerald-100/90">
-                Visa och hantera ansökningar →
-              </p>
-            </Link>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/gigs/${g.id}`}
+                  className="text-sm font-semibold text-emerald-100/90 transition hover:text-emerald-100"
+                >
+                  Visa och hantera ansökningar →
+                </Link>
+                <button
+                  onClick={() => deleteGig(g.id)}
+                  disabled={deletingId === g.id}
+                  className="rounded-full border border-rose-300/70 px-3 py-2 text-xs font-semibold text-rose-50 transition hover:-translate-y-0.5 hover:bg-rose-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {deletingId === g.id ? "Tar bort..." : "Ta bort gig"}
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       </div>

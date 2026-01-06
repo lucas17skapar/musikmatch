@@ -20,6 +20,54 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Supabase chat (logged-in)
+
+Set the env vars in `.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+Enable realtime + RLS for application messages (Supabase SQL editor):
+
+```sql
+-- Enable realtime for chat messages
+ALTER PUBLICATION supabase_realtime ADD TABLE public.application_messages;
+
+-- Lock down chat messages to participants only
+ALTER TABLE public.application_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "app_messages_read_participants"
+ON public.application_messages
+FOR SELECT
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.applications a
+    JOIN public.gigs g ON g.id = a.gig_id
+    WHERE a.id = application_messages.application_id
+      AND (a.musician_id = auth.uid() OR g.venue_id = auth.uid())
+  )
+);
+
+CREATE POLICY "app_messages_insert_participants"
+ON public.application_messages
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  sender_id = auth.uid()
+  AND EXISTS (
+    SELECT 1
+    FROM public.applications a
+    JOIN public.gigs g ON g.id = a.gig_id
+    WHERE a.id = application_messages.application_id
+      AND (a.musician_id = auth.uid() OR g.venue_id = auth.uid())
+  )
+);
+```
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
