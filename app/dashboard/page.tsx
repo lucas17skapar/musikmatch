@@ -10,14 +10,26 @@ type Profile = {
     display_name: string | null;
     contact_email: string | null;
     contact_phone: string | null;
+    show_in_musician_list?: boolean | null;
 };
+
+function isMissingColumnError(
+    error: { message?: string | null; code?: string | null } | null,
+    columnName: string
+) {
+    const message = (error?.message ?? "").toLowerCase();
+    return error?.code === "42703" || (message.includes(columnName.toLowerCase()) && message.includes("does not exist"));
+}
 
 export default function DashboardPage() {
     const router = useRouter();
     const [profile, setProfile] = useState<Profile | null>(null);
     const [msg, setMsg] = useState<string | null>(null);
+    const [msgTone, setMsgTone] = useState<"success" | "error" | null>(null);
     const [contactEmail, setContactEmail] = useState("");
     const [contactPhone, setContactPhone] = useState("");
+    const [showInMusicianList, setShowInMusicianList] = useState(true);
+    const [supportsMusicianVisibility, setSupportsMusicianVisibility] = useState(true);
     const [saving, setSaving] = useState(false);
     const [theme, setTheme] = useState<"dark" | "light">(() => {
         if (typeof window === "undefined") return "dark";
@@ -32,17 +44,21 @@ export default function DashboardPage() {
 
             const { data: p, error } = await supabase
                 .from("profiles")
-                .select("role, display_name, contact_email, contact_phone")
+                .select("*")
                 .eq("id", session.user.id)
                 .maybeSingle();
 
-            if (error) return setMsg(error.message);
+            if (error) {
+                setMsgTone("error");
+                return setMsg(error.message);
+            }
             if (!p) return router.replace("/onboarding");
 
             const prof = p as Profile;
             setProfile(prof);
             setContactEmail(prof.contact_email ?? "");
             setContactPhone(prof.contact_phone ?? "");
+            setShowInMusicianList(prof.show_in_musician_list ?? true);
         })();
     }, [router]);
 
@@ -51,8 +67,9 @@ export default function DashboardPage() {
         router.replace("/login");
     }
 
-    async function saveContact() {
+    async function saveProfile() {
         setMsg(null);
+        setMsgTone(null);
         setSaving(true);
 
         const { data } = await supabase.auth.getSession();
@@ -64,14 +81,42 @@ export default function DashboardPage() {
 
         const trimmedEmail = contactEmail.trim() || null;
         const trimmedPhone = contactPhone.trim() || null;
+        const baseUpdates = {
+            contact_email: trimmedEmail,
+            contact_phone: trimmedPhone,
+        };
+        const shouldPersistVisibility =
+            profile?.role === "musician" && supportsMusicianVisibility;
+        let visibilityColumnMissing = false;
+        let visibilityWasSaved = shouldPersistVisibility;
+        let error: { message?: string | null; code?: string | null } | null = null;
 
-        const { error } = await supabase
+        const { error: updateError } = await supabase
             .from("profiles")
-            .update({ contact_email: trimmedEmail, contact_phone: trimmedPhone })
+            .update(
+                shouldPersistVisibility
+                    ? { ...baseUpdates, show_in_musician_list: showInMusicianList }
+                    : baseUpdates
+            )
             .eq("id", session.user.id);
+        error = updateError;
+
+        if (error && shouldPersistVisibility && isMissingColumnError(error, "show_in_musician_list")) {
+            visibilityColumnMissing = true;
+            visibilityWasSaved = false;
+            setSupportsMusicianVisibility(false);
+
+            const { error: fallbackError } = await supabase
+                .from("profiles")
+                .update(baseUpdates)
+                .eq("id", session.user.id);
+
+            error = fallbackError;
+        }
 
         setSaving(false);
         if (error) {
+            setMsgTone("error");
             setMsg(error.message);
             return;
         }
@@ -95,10 +140,23 @@ export default function DashboardPage() {
 
         setProfile((prev) =>
             prev
-                ? { ...prev, contact_email: trimmedEmail, contact_phone: trimmedPhone }
+                ? {
+                      ...prev,
+                      contact_email: trimmedEmail,
+                      contact_phone: trimmedPhone,
+                      show_in_musician_list:
+                          prev.role === "musician" && visibilityWasSaved
+                              ? showInMusicianList
+                              : prev.show_in_musician_list,
+                  }
                 : null
         );
-        setMsg("Kontaktuppgifter sparade.");
+        setMsgTone("success");
+        setMsg(
+            visibilityColumnMissing
+                ? "Profil sparad, men synlighetsinställningen kräver databas-migrering."
+                : "Profil sparad."
+        );
     }
 
     function toggleTheme() {
@@ -127,7 +185,15 @@ export default function DashboardPage() {
                         </button>
                     </div>
 
-                    {msg && <p className="mt-4 text-sm text-rose-100/90">{msg}</p>}
+                    {msg ? (
+                        <p
+                            className={`mt-4 text-sm ${
+                                msgTone === "error" ? "text-rose-100/90" : "text-emerald-100/90"
+                            }`}
+                        >
+                            {msg}
+                        </p>
+                    ) : null}
 
                     <div className="mt-6 space-y-3">
                         {profile ? (
@@ -158,14 +224,65 @@ export default function DashboardPage() {
                                         value={contactPhone}
                                         onChange={(e) => setContactPhone(e.target.value)}
                                     />
-                                    <button
-                                        onClick={saveContact}
-                                        disabled={saving}
-                                        className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/25 transition hover:-translate-y-0.5 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-70"
-                                    >
-                                        {saving ? "Sparar..." : "Spara kontakt"}
-                                    </button>
                                 </div>
+                                {profile.role === "musician" && supportsMusicianVisibility ? (
+                                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 space-y-3">
+                                        <p className="text-xs uppercase tracking-[0.15em] text-slate-200/70">
+                                            Synlighet i musikerkatalogen
+                                        </p>
+                                        <p className="text-sm text-slate-200/80">
+                                            Styr om venues kan hitta dig på sidan där musiker filtreras efter
+                                            kategorier.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowInMusicianList((value) => !value)}
+                                            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-sm transition ${
+                                                showInMusicianList
+                                                    ? "border-emerald-300/70 bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/25"
+                                                    : "border-white/10 bg-white/5 text-white hover:border-emerald-300/60"
+                                            }`}
+                                        >
+                                            {showInMusicianList
+                                                ? "Synlig för venues"
+                                                : "Dold för venues"}
+                                            <span
+                                                className={`h-4 w-7 rounded-full bg-white/10 p-1 transition ${
+                                                    showInMusicianList ? "bg-emerald-500/80" : "bg-white/20"
+                                                }`}
+                                            >
+                                                <span
+                                                    className={`block h-2.5 w-2.5 rounded-full bg-white transition ${
+                                                        showInMusicianList ? "translate-x-3" : ""
+                                                    }`}
+                                                />
+                                            </span>
+                                        </button>
+                                        <p className="text-xs text-slate-300/70">
+                                            {showInMusicianList
+                                                ? "Din profil visas i katalogen för venues."
+                                                : "Din profil döljs från katalogen tills du slår på synlighet igen."}
+                                        </p>
+                                    </div>
+                                ) : null}
+                                {profile.role === "musician" && !supportsMusicianVisibility ? (
+                                    <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 space-y-2">
+                                        <p className="text-xs uppercase tracking-[0.15em] text-amber-200/80">
+                                            Synlighet i musikerkatalogen
+                                        </p>
+                                        <p className="text-sm text-amber-100/90">
+                                            Synlighetsinställningen är inte tillgänglig ännu eftersom
+                                            databas-kolumnen saknas.
+                                        </p>
+                                    </div>
+                                ) : null}
+                                <button
+                                    onClick={saveProfile}
+                                    disabled={saving}
+                                    className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/25 transition hover:-translate-y-0.5 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                    {saving ? "Sparar..." : "Spara profil"}
+                                </button>
                                 <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 space-y-2">
                                     <p className="text-xs uppercase tracking-[0.15em] text-slate-200/70">
                                         Tema

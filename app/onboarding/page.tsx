@@ -7,6 +7,14 @@ import { AppShell } from "@/app/AppShell";
 
 type Role = "musician" | "venue";
 
+function isMissingColumnError(
+    error: { message?: string | null; code?: string | null } | null,
+    columnName: string
+) {
+    const message = (error?.message ?? "").toLowerCase();
+    return error?.code === "42703" || (message.includes(columnName.toLowerCase()) && message.includes("does not exist"));
+}
+
 export default function OnboardingPage() {
     const router = useRouter();
     const [role, setRole] = useState<Role | null>(null);
@@ -39,11 +47,21 @@ export default function OnboardingPage() {
         if (!role) return setMsg("Välj Musiker eller Krog / Venue.");
         if (displayName.trim().length < 2) return setMsg("Skriv ett visningsnamn (minst 2 tecken).");
 
-        const { error } = await supabase.from("profiles").insert({
+        const baseProfile = {
             id: session.user.id,
             role,
             display_name: displayName.trim(),
+        };
+
+        let { error } = await supabase.from("profiles").insert({
+            ...baseProfile,
+            show_in_musician_list: role === "musician",
         });
+
+        if (error && isMissingColumnError(error, "show_in_musician_list")) {
+            const { error: fallbackError } = await supabase.from("profiles").insert(baseProfile);
+            error = fallbackError;
+        }
 
         if (error) setMsg(error.message);
         else router.replace("/dashboard");

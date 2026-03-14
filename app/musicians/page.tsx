@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -11,6 +12,7 @@ type Musician = {
   music_type?: string | null;
   rating?: number | null;
   bankid_verified?: boolean | null;
+  show_in_musician_list?: boolean | null;
 };
 
 export default function MusiciansPage() {
@@ -74,7 +76,7 @@ export default function MusiciansPage() {
       if (error) {
         if (active) setMsg(error.message);
       } else if (rows && active) {
-        setMusicians(rows as Musician[]);
+        setMusicians((rows as Musician[]).filter((musician) => musician.show_in_musician_list !== false));
       }
 
       if (active) setLoading(false);
@@ -100,6 +102,7 @@ export default function MusiciansPage() {
     const matchesBankId = !bankIdOnly || Boolean(m.bankid_verified);
     return matchesType && matchesRating && matchesBankId;
   });
+  const hasActiveFilters = typeFilter !== "alla" || minRating > 0 || bankIdOnly;
 
   return (
     <AppShell containerClassName="py-6">
@@ -107,7 +110,9 @@ export default function MusiciansPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold text-white">Registrerade musiker</h1>
-            <p className="text-sm text-slate-200/80">Överblick över musiker i Musikmatch.</p>
+            <p className="text-sm text-slate-200/80">
+              Överblick över musiker i Musikmatch som valt att synas för venues.
+            </p>
           </div>
           <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-emerald-100/80">
             {visibleMusicians.length} musiker
@@ -180,14 +185,19 @@ export default function MusiciansPage() {
         {msg && <p className="text-sm text-rose-100/90">{msg}</p>}
         {loading ? <p className="text-sm text-slate-200/80">Laddar...</p> : null}
         {!loading && !msg && visibleMusicians.length === 0 ? (
-          <p className="text-sm text-slate-200/80">Inga musiker registrerade ännu.</p>
+          <p className="text-sm text-slate-200/80">
+            {hasActiveFilters
+              ? "Inga musiker matchar filtren."
+              : "Inga synliga musiker registrerade ännu."}
+          </p>
         ) : null}
 
         <div className="grid gap-3">
           {visibleMusicians.map((m) => (
-            <div
+            <Link
               key={m.id}
-              className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-lg shadow-black/30"
+              href={`/musicians/${m.id}`}
+              className="block rounded-2xl border border-white/10 bg-white/5 p-4 shadow-lg shadow-black/30 transition hover:-translate-y-0.5 hover:border-emerald-300/60"
             >
               <p className="text-lg font-semibold text-white">{m.display_name ?? "(utan namn)"}</p>
               {m.music_type ? (
@@ -202,7 +212,8 @@ export default function MusiciansPage() {
                 ) : null}
               </div>
               <p className="mt-1 text-xs text-slate-200/70">ID: {m.id.slice(0, 8)}…</p>
-            </div>
+              <p className="mt-3 text-xs font-semibold text-emerald-100/90">Visa profil →</p>
+            </Link>
           ))}
         </div>
       </div>
