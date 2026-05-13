@@ -50,7 +50,7 @@ export default function DashboardPage() {
 
             if (error) {
                 setMsgTone("error");
-                return setMsg(error.message);
+                return setMsg(error?.message ?? "Okänt fel");
             }
             if (!p) return router.replace("/onboarding");
 
@@ -117,7 +117,7 @@ export default function DashboardPage() {
         setSaving(false);
         if (error) {
             setMsgTone("error");
-            setMsg(error.message);
+            setMsg(error?.message ?? "Okänt fel");
             return;
         }
 
