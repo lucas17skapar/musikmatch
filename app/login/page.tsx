@@ -39,7 +39,7 @@ export default function LoginPage() {
         if (!email.trim()) return setMsg("Skriv din email först.");
 
         const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-            redirectTo: "http://localhost:3000/reset",
+            redirectTo: new URL("/reset", window.location.origin).toString(),
         });
 
         if (error) return setMsg(error.message);
